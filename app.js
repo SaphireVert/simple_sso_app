@@ -8,10 +8,13 @@ var session = require("express-session");
 var okta = require("@okta/okta-sdk-nodejs");
 var ExpressOIDC = require("@okta/oidc-middleware").ExpressOIDC;
 require("dotenv").config();
+var passport = require("passport");
+var GoogleStrategy = require("passport-google-oauth20").Strategy;
 
 const dashboardRouter = require("./routes/dashboard");
 const publicRouter = require("./routes/public");
 const usersRouter = require("./routes/users");
+const loginPageRouter = require("./routes/loginPage");
 
 var app = express();
 
@@ -73,18 +76,71 @@ app.use((req, res, next) => {
     });
 });
 
+
+
+
+
 function loginRequired(req, res, next) {
   if (!req.user) {
     return res.status(401).render("unauthenticated");
   } else {
     next();
   }
-
 }
+
+
+var tequila = require("passport-tequila");
+var myStrategy = new tequila.Strategy(
+  {
+    service: "The name of my app", // Appears on Tequila login screen
+    request: ["displayname", "firstname"], // Personal info to fetch
+  },
+  function (userKey, profile, done) {
+    User.findOrCreate(profile, function (err, user) {
+      done(err, user);
+    });
+  }
+);
+passport.use(myStrategy);
+
+passport.serializeUser(function (user, done) {
+  done(null, user.id);
+});
+
+passport.use(
+  new GoogleStrategy(
+    {
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: "http://localhost:3000/auth/google/callback",
+    },
+    function (accessToken, refreshToken, profile, cb) {
+      User.findOrCreate({ googleId: profile.id }, function (err, user) {
+        return cb(err, user);
+      });
+    }
+  )
+);
+
+app.get(
+  "/auth/google",
+  passport.authenticate("google", { scope: ["profile"] })
+);
+
+app.get(
+  "/auth/google/callback",
+  passport.authenticate("google", { failureRedirect: "/login" }),
+  function (req, res) {
+    // Successful authentication, redirect home.
+    console.log("sucessfull authentication------------------");
+    res.redirect("/");
+  }
+);
 
 app.use("/", publicRouter);
 app.use("/dashboard", loginRequired, dashboardRouter);
 app.use("/users", usersRouter);
+app.use("/loginpage", loginPageRouter);
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
