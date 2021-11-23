@@ -9,7 +9,7 @@ var okta = require("@okta/okta-sdk-nodejs");
 var ExpressOIDC = require("@okta/oidc-middleware").ExpressOIDC;
 require("dotenv").config();
 var passport = require("passport");
-var GoogleStrategy = require("passport-google-oauth20").Strategy;
+// var GoogleStrategy = require("passport-google-oauth20").Strategy;
 
 const dashboardRouter = require("./routes/dashboard");
 const publicRouter = require("./routes/public");
@@ -17,6 +17,12 @@ const usersRouter = require("./routes/users");
 const loginPageRouter = require("./routes/loginPage");
 
 var app = express();
+require("./authGoogle");
+
+function isLoggedIn(req, res, next) {
+  req.user ? next() : res.sendStatus(401);
+}
+
 
 var secrets = require("./secrets.json")
 // https://github.com/okta/okta-sdk-nodejs/issues/78
@@ -82,6 +88,7 @@ app.use((req, res, next) => {
 
 function loginRequired(req, res, next) {
   if (!req.user) {
+    console.log("unauthenticated! --------------");
     return res.status(401).render("unauthenticated");
   } else {
     next();
@@ -89,53 +96,57 @@ function loginRequired(req, res, next) {
 }
 
 
-var tequila = require("passport-tequila");
-var myStrategy = new tequila.Strategy(
-  {
-    service: "The name of my app", // Appears on Tequila login screen
-    request: ["displayname", "firstname"], // Personal info to fetch
-  },
-  function (userKey, profile, done) {
-    User.findOrCreate(profile, function (err, user) {
-      done(err, user);
-    });
-  }
-);
-passport.use(myStrategy);
+// var tequila = require("passport-tequila");
+// var myStrategy = new tequila.Strategy(
+//   {
+//     service: "The name of my app", // Appears on Tequila login screen
+//     request: ["displayname", "firstname"], // Personal info to fetch
+//   },
+//   function (userKey, profile, done) {
+//     User.findOrCreate(profile, function (err, user) {
+//       done(err, user);
+//     });
+//   }
+// );
+// passport.use(myStrategy);
 
-passport.serializeUser(function (user, done) {
-  done(null, user.id);
-});
 
-passport.use(
-  new GoogleStrategy(
-    {
-      clientID: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: "http://localhost:3000/auth/google/callback",
-    },
-    function (accessToken, refreshToken, profile, cb) {
-      User.findOrCreate({ googleId: profile.id }, function (err, user) {
-        return cb(err, user);
-      });
-    }
-  )
-);
+// passport.use(
+//   new GoogleStrategy(
+//     {
+//       clientID: process.env.GOOGLE_CLIENT_ID,
+//       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+//       callbackURL: "http://localhost:3000/auth/google/callback",
+//     },
+//     function (request, accessToken, refreshToken, profile, done) {
+//       return done(null, profile)
+//     }
+//   )
+// );
 
 app.get(
   "/auth/google",
-  passport.authenticate("google", { scope: ["profile"] })
+  passport.authenticate("google", { scope: ["email", "profile"] })
 );
 
 app.get(
   "/auth/google/callback",
-  passport.authenticate("google", { failureRedirect: "/login" }),
-  function (req, res) {
-    // Successful authentication, redirect home.
-    console.log("sucessfull authentication------------------");
-    res.redirect("/");
-  }
+  passport.authenticate("google", {
+    successRedirect: "/protected",
+    failureRedirect: "/auth/failure",
+  })
 );
+
+app.get("/protected", isLoggedIn, (req, res) => {
+  console.log("--------------------------------------------");
+  console.log(req.user);
+  res.send(`Hello ${req.user.displayName}`);
+});    
+
+app.get("/auth/failure", (req, res) => {
+  res.send("Something went wrong...");
+});    
+
 
 app.use("/", publicRouter);
 app.use("/dashboard", loginRequired, dashboardRouter);
